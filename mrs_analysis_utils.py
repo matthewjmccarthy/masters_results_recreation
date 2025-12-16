@@ -86,16 +86,19 @@ def get_mean_data(Data_filtered, labels, xaxis, exp, results_dir=None):
 
 
 def extract_filtered_data(input_dir: str, ppm_range: list, exp: list):
-    """Extract spectra and labels for given ppm range."""
-    Data, labels = [], []
+    """Extract spectra, labels, case_ids for given ppm range."""
+    Data, labels, case_ids = [], [], []
+
     for file in sorted(os.listdir(input_dir)):
         if not file.endswith('.xml'):
             continue
 
         tree = ET.parse(os.path.join(input_dir, file))
         root = tree.getroot()
+
         points = np.array(root.find('.//Points').text.strip().split(), dtype=np.float64)
-        label = root.find('.//Tissue').get('Type')
+        label  = root.find('.//Tissue').get('Type')
+
         voxel = root.find('.//Voxel')
         NPoint = int(voxel.get('PointsNumber'))
         ppm_first, ppm_last = float(voxel.get('FirstPPM')), float(voxel.get('LastPPM'))
@@ -103,21 +106,31 @@ def extract_filtered_data(input_dir: str, ppm_range: list, exp: list):
         if label not in exp:
             continue
 
+        # ---- Case ID extraction (preferred: from Voxel attribute) ----
+        case_id = voxel.get('caseID')
+        if case_id is None:
+            # fallback: filename without extension
+            case_id = os.path.splitext(file)[0]
+
         min_idx = get_PPM(ppm_range[0], NPoint, ppm_last, ppm_first)
         max_idx = get_PPM(ppm_range[1], NPoint, ppm_last, ppm_first)
+
         Data.append(points[max_idx-1:min_idx])
         labels.append(label)
+        case_ids.append(case_id)
 
     Data = np.array(Data)
-    labels = np.array(labels)
+    labels = np.array(labels).astype(str)
+    case_ids = np.array(case_ids).astype(str)
+
     xaxis = np.flip(np.linspace(ppm_range[0], ppm_range[1], Data.shape[1], endpoint=True))
-    return Data, labels, xaxis
+    return Data, labels, case_ids, xaxis
 
 # --- Source + Weight Utilities ---
 
 def load_sources(input_dir: str, results_dir: str, ppm_range: list,
                  good_idx: int, exp: list):
-    Data_filtered, labels, xaxis = extract_filtered_data(
+    Data_filtered, labels, case_ids, xaxis = extract_filtered_data(
         input_dir, ppm_range, exp
     )
 
@@ -132,7 +145,7 @@ def load_sources(input_dir: str, results_dir: str, ppm_range: list,
 
     sources = np.array(sources)
 
-    return sources, mean_data, labels, xaxis, raw_signals
+    return sources, mean_data, labels, case_ids, xaxis, raw_signals
 
 def load_weights(results_dir: str, good_idx: int):
     """Load H matrix from Excel files."""
